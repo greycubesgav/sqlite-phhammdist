@@ -1,6 +1,3 @@
-/* compile osx 
- * gcc -bundle -fPIC -O3 -o popcount.dylib popcount.c
- * */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
