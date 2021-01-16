@@ -45,29 +45,36 @@ static void phhammdist(sqlite3_context *context, int argc, sqlite3_value **argv)
         UINT_ph1 = strtoul(phBlob1, &ptr, 10);
         UINT_ph2 = strtoul(phBlob2, &ptr, 10);
     } else if (datatype_arg1 == SQLITE_INTEGER && datatype_arg2 == SQLITE_INTEGER) {
+
+        // SQLITE stores SIGNED 64bit INTS (-7726118085807353866)
+        // The Phash function uses UNSIGNED 64 bit INTS (10720625987902197750)
+        // Therefore we need to convert any SIGNED ints (-7726118085807353866) into UNSIGNED ints (10720625987902197750) before checking the distance between the two
+
         INT_ph1 = sqlite3_value_int64(argv[0]);
         INT_ph2 = sqlite3_value_int64(argv[1]);
 
+        #ifdef DEBUG
+            fprintf( stderr, "INT_ph1: %lld, INT_ph2: %lld\n",    INT_ph1,  INT_ph2);
+        #endif
+
         UINT_ph1 = (uint64_t) INT_ph1;
         UINT_ph2 = (uint64_t) INT_ph2;
-        
-        #ifdef DEBUG
-          fprintf( stderr, "INT_ph1: %lld, INT_ph2: %lld\n", INT_ph1, INT_ph2);
-          fprintf( stderr, "ph1: %llu, ph2: %llu\n", UINT_ph1, UINT_ph2);
-        #endif
-        //ph1 = sqlite3_value_int64(argv[0]);
-        //ph2 = sqlite3_value_int64(argv[1]);
-    
+            
     } else {
         sqlite3_result_error(context, "phhammdist: both arguments need to be of type TEXT or both arguments need to be of type INTEGER.", -1);
         return;
     }
     #ifdef DEBUG
-      fprintf( stderr, "INT_ph1: %lld, INT_ph2: %lld\n", INT_ph1, INT_ph2);
       fprintf( stderr, "UINT_ph1: %llu, UINT_ph2: %llu\n", UINT_ph1, UINT_ph2);    
+      fprintf( stderr, "ph_hamming_distance(UINT_ph1:[%llu], UINT_ph2:[%llu])\n", UINT_ph1, UINT_ph2);    
     #endif
 
-    uint64_t p_ham_distance = ph_hamming_distance(UINT_ph1,UINT_ph1);
+    uint64_t p_ham_distance = ph_hamming_distance(UINT_ph1,UINT_ph2);
+
+    #ifdef DEBUG
+      fprintf( stderr, "p_ham_distance: %llu\n",  p_ham_distance);
+    #endif
+
     sqlite3_result_int(context, p_ham_distance);
 }
 
