@@ -71,6 +71,29 @@ verify that it was built by this repository's release workflow with the
   gh attestation verify sqlite-phhammdist-<version>-linux-x86_64.tar.gz -R greycubesgav/sqlite-phhammdist
 ```
 
+## Installing on Linux
+`make install` (as root) copies `sqlite-phhammdist.so` into a directory the
+dynamic loader searches. On Debian, Ubuntu and other multiarch distributions
+that is `/usr/lib/<arch>-linux-gnu/` (e.g. `/usr/lib/x86_64-linux-gnu/`).
+Other distributions use `/usr/lib64` or `/usr/lib`. You can then load the
+extension by name, without a path:
+
+```
+  sudo make install
+```
+
+```SQL
+  SELECT load_extension('sqlite-phhammdist');
+```
+
+or `.load sqlite-phhammdist` in the `sqlite3` shell. SQLite never loads
+extensions automatically; to load it in every `sqlite3` shell session, add
+that `.load` line to `~/.sqliterc`.
+
+`sudo make uninstall` removes it. Set `LIBDIR=...` to install somewhere else,
+and `DESTDIR=...` to stage the install into a package build root. For a
+release download, copy the `.so` from the archive into the same directory.
+
 ## Building
 The source requires a C99 compiler. Run `make` (GNU make). This builds
 `sqlite-phhammdist.so` (`.dylib` on macOS, `.dll` on Windows with MinGW) and a
