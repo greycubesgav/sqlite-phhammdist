@@ -251,10 +251,13 @@ int main(int argc, char **argv){
     }
     test_schema_objects(db);
     test_unterminated_text(db);
-    sqlite3_close(db);
 
+    /* Keep the first connection open while the others load the extension, so
+     * it is never unloaded and reloaded mid-run: on macOS, ASan reports a
+     * reloaded library's globals as an ODR violation. */
     test_utf16(argv[1]);
     test_explicit_entry_point(argv[1]);
+    sqlite3_close(db);
 
     printf("1..%d\n", test_num);
     if (failures > 0) {
