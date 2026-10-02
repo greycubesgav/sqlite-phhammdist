@@ -1,4 +1,6 @@
 # sqlite-phhammdist
+[![CI](https://github.com/greycubesgav/sqlite-phhammdist/actions/workflows/ci.yml/badge.svg)](https://github.com/greycubesgav/sqlite-phhammdist/actions/workflows/ci.yml)
+
 PHash Hamming distance calcuation in SQLite
 
 sqlite-phhammdist - Hamming distance between two unsigned 64-bit hashes in SQLite returned as an INT
@@ -89,6 +91,11 @@ read them, and `make test` fails if any test fails.
   make test-valgrind   # under valgrind, with leak checking
   prove --exec ./tests/test_phhammdist ./sqlite-phhammdist.so   # via prove, after make test
 ```
+
+GitHub Actions runs the suite on every pull request and push to `master`:
+on Linux with gcc and clang (including ASan/UBSan and valgrind), on macOS
+(universal build, ASan/UBSan), and on Windows with both MinGW and MSVC
+(see `.github/workflows/ci.yml`).
 
 The test driver needs a SQLite library that can load extensions. macOS's
 system libsqlite3 cannot, so on macOS install SQLite with Homebrew and run

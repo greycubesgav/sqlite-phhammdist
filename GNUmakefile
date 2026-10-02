@@ -7,9 +7,12 @@ else ifeq ($(UNAME_S),Darwin)
 SUFFIX:=	dylib
 # Universal binary so it loads in both arm64 and x86_64 processes.
 ARCHFLAGS:=	-arch arm64 -arch x86_64
+# LeakSanitizer is not supported on macOS; asking for it aborts the run.
+ASAN_ENV:=
 else
 SUFFIX:=	so
 PICFLAGS:=	-fPIC
+ASAN_ENV:=	ASAN_OPTIONS=detect_leaks=1
 endif
 
 # Use a SQLite installed somewhere other than the default search paths, e.g.
@@ -23,6 +26,10 @@ TEST_LDFLAGS+=	-L$(SQLITE_PREFIX)/lib -Wl,-rpath,$(SQLITE_PREFIX)/lib
 endif
 
 WARNFLAGS:=	-std=c99 -Wall -Wextra -Wpedantic
+# `make WERROR=1` turns warnings into errors (used by CI).
+ifdef WERROR
+WARNFLAGS+=	-Werror
+endif
 
 # Loadable extensions get every SQLite API call through pApi, so they must
 # not link against libsqlite3.
@@ -74,7 +81,7 @@ $(ASAN_BIN): tests/test_phhammdist.c GNUmakefile
 	$(CC) $(CPPFLAGS) $(WARNFLAGS) $(SANFLAGS) -o $@ $< $(TEST_LDFLAGS) $(TEST_LIBS)
 
 test-asan: $(ASAN_BIN) $(ASAN_EXT)
-	ASAN_OPTIONS=detect_leaks=1 ./$(ASAN_BIN) ./$(ASAN_EXT)
+	$(ASAN_ENV) ./$(ASAN_BIN) ./$(ASAN_EXT)
 
 test-valgrind: $(TEST_BIN) $(EXT)
 	valgrind --quiet --error-exitcode=1 --leak-check=full ./$(TEST_BIN) ./$(EXT)
