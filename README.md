@@ -23,6 +23,24 @@ have a perceptual hash that is close in Hamming distance:
   SELECT photo_id, phhammdist(photo_hash, ?) AS ph_dist FROM photos WHERE ph_dist <= 9;
 ```
 
+Both arguments must be TEXT or both must be INTEGER. TEXT arguments must be
+plain unsigned decimal integers that fit in 64 bits (e.g. `'10720625987902197750'`):
+empty strings, signs, whitespace, trailing characters and out-of-range values
+raise an error rather than being silently converted. INTEGER arguments are
+SQLite's signed 64-bit values and are reinterpreted as unsigned.
+
+The function is registered as `SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS`, so it
+can be used in views, triggers, CHECK constraints, generated columns and
+indexes even when `PRAGMA trusted_schema=OFF`.
+
+## Building
+Run `make`. This builds `sqlite-phhammdist.so` and a debug build,
+`sqlite-phhammdist_debug.so` (compiled with `-DPHHAMMDIST_DEBUG`).
+
+**Never deploy the debug build.** It writes argument values to the host
+process's stderr on every call, which leaks query data into application logs
+and adds I/O to every row. Use it for local debugging only.
+
 When loading extensions from python, the python binary needs to be built with
 the --enable-loadable-sqlite-extensions configure argument.  You then need to
 enable the loading of extensions using:
