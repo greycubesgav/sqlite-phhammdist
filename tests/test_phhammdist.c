@@ -237,8 +237,9 @@ int main(int argc, char **argv){
         return 2;
     }
 
-    /* Line-buffered so the last result before a crash is still printed. */
-    setvbuf(stdout, NULL, _IOLBF, 0);
+    /* Unbuffered so the last result before a crash is still printed.
+     * (Not _IOLBF: MSVC's CRT has no line buffering and aborts on size 0.) */
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     printf("# SQLite %s, extension %s\n", sqlite3_libversion(), argv[1]);
 
