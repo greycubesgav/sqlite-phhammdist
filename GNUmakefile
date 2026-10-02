@@ -1,14 +1,19 @@
 UNAME_S:=	$(shell uname -s)
 
-ifeq ($(UNAME_S),Darwin)
+ifeq ($(OS),Windows_NT)
+SUFFIX:=	dll
+else ifeq ($(UNAME_S),Darwin)
 SUFFIX:=	dylib
-CFLAGS+=	-arch x86_64
+# Universal binary so it loads in both arm64 and x86_64 processes.
+CFLAGS+=	-arch arm64 -arch x86_64
 else
 SUFFIX:=	so
+CFLAGS+=	-fPIC
 endif
 
-CFLAGS+=	-std=c99 -Wall -Wextra -Wpedantic -fPIC
-LIBS+=		-lsqlite3
+# Loadable extensions get every SQLite API call through pApi, so they must
+# not link against libsqlite3.
+CFLAGS+=	-std=c99 -Wall -Wextra -Wpedantic -fvisibility=hidden
 
 all: sqlite-phhammdist.$(SUFFIX) sqlite-phhammdist_debug.$(SUFFIX)
 
