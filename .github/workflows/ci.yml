@@ -46,6 +46,17 @@ jobs:
         if: matrix.cc == 'gcc'
         run: make WERROR=1 test-valgrind
 
+      # Install into the system library directory, load the extension by bare
+      # name (no path), then uninstall.
+      - name: Test install and uninstall
+        run: |
+          sudo make install
+          ./tests/test_phhammdist sqlite-phhammdist
+          sudo make uninstall
+          if ./tests/test_phhammdist sqlite-phhammdist >/dev/null 2>&1; then
+            echo "::error::extension still loads after make uninstall"; exit 1
+          fi
+
   macos:
     name: macOS
     runs-on: macos-latest

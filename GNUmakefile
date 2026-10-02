@@ -40,13 +40,37 @@ TEST_LIBS:=	-lsqlite3
 SANFLAGS:=	-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g
 
 EXT:=		sqlite-phhammdist.$(SUFFIX)
+
+# --- Install -----------------------------------------------------------------
+# `make install` copies the extension into a directory the dynamic loader
+# searches, so it loads by bare name: SELECT load_extension('sqlite-phhammdist').
+# On Linux the default is the multiarch library directory used by Debian and
+# Ubuntu (/usr/lib/<arch>-linux-gnu). Distros without multiarch fall back to
+# /usr/lib64 or /usr/lib. Override with LIBDIR=..., and stage into a package
+# root with DESTDIR=...
+ifeq ($(UNAME_S),Linux)
+MULTIARCH:=	$(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || gcc -print-multiarch 2>/dev/null)
+# Without dpkg-architecture or gcc (e.g. a clang-only Debian/Ubuntu system),
+# use the multiarch directory if it exists for this machine.
+ifeq ($(MULTIARCH),)
+MULTIARCH:=	$(notdir $(wildcard /usr/lib/$(shell uname -m)-linux-gnu))
+endif
+ifneq ($(MULTIARCH),)
+LIBDIR?=	/usr/lib/$(MULTIARCH)
+else ifneq ($(wildcard /usr/lib64/.),)
+LIBDIR?=	/usr/lib64
+else
+LIBDIR?=	/usr/lib
+endif
+endif
+INSTALL?=	install
 TEST_BIN:=	tests/test_phhammdist$(EXE)
 # Built in subdirectories so SQLite derives the same entry point name.
 SWAR_EXT:=	tests/swar/$(EXT)
 ASAN_EXT:=	tests/asan/$(EXT)
 ASAN_BIN:=	tests/asan/test_phhammdist$(EXE)
 
-.PHONY: all clean test test-asan test-valgrind
+.PHONY: all clean install uninstall test test-asan test-valgrind
 
 all: $(EXT) sqlite-phhammdist_debug.$(SUFFIX)
 
@@ -57,6 +81,19 @@ $(EXT): sqlite-phhammdist.c GNUmakefile
 # For local debugging only -- never deploy sqlite-phhammdist_debug.$(SUFFIX).
 sqlite-phhammdist_debug.$(SUFFIX): sqlite-phhammdist.c GNUmakefile
 	$(CC) -DPHHAMMDIST_DEBUG -shared $(CPPFLAGS) $(CFLAGS) -o $@ $< $(LIBS)
+
+install: $(EXT)
+ifeq ($(LIBDIR),)
+	$(error make install supports Linux only; on other systems set LIBDIR=<directory>)
+endif
+	$(INSTALL) -d $(DESTDIR)$(LIBDIR)
+	$(INSTALL) -m 0644 $(EXT) $(DESTDIR)$(LIBDIR)/$(EXT)
+
+uninstall:
+ifeq ($(LIBDIR),)
+	$(error make uninstall supports Linux only; on other systems set LIBDIR=<directory>)
+endif
+	rm -f $(DESTDIR)$(LIBDIR)/$(EXT)
 
 # --- Tests -------------------------------------------------------------------
 
