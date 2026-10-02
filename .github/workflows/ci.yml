@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev valgrind
+          # clang's sanitizer runtime is packaged separately.
+          if [ "$CC" = clang ]; then sudo apt-get install -y clang libclang-rt-dev; fi
+
+      - name: Build
+        run: make WERROR=1
+
+      - name: Test
+        run: make WERROR=1 test
+
+      - name: Test with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make WERROR=1 test-asan
+
+      - name: Test under valgrind
+        if: matrix.cc == 'gcc'
+        run: make WERROR=1 test-valgrind
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The system libsqlite3 cannot load extensions; use Homebrew's (keg-only).
+      - name: Install dependencies
+        run: |
+          brew install sqlite
+          echo "SQLITE_PREFIX=$(brew --prefix sqlite)" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make WERROR=1 SQLITE_PREFIX="$SQLITE_PREFIX"
+
+      - name: Check universal binary
+        run: |
+          archs=$(lipo -archs sqlite-phhammdist.dylib)
+          echo "$archs"
+          case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) exit 1 ;; esac
+
+      - name: Test
+        run: make WERROR=1 SQLITE_PREFIX="$SQLITE_PREFIX" test
+
+      - name: Test with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make WERROR=1 SQLITE_PREFIX="$SQLITE_PREFIX" test-asan
+
+  windows-mingw:
+    name: Windows (MinGW)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-sqlite3
+
+      - name: Build
+        run: make WERROR=1
+
+      - name: Test
+        run: make WERROR=1 test
+
+  windows-msvc:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # vcpkg is preinstalled on the runner; it builds SQLite with MSVC and
+      # verifies the source download itself.
+      - name: Install SQLite
+        run: |
+          "%VCPKG_INSTALLATION_ROOT%\vcpkg" install sqlite3:x64-windows
+          echo SQLITE_DIR=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows>> "%GITHUB_ENV%"
+          echo %VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin>> "%GITHUB_PATH%"
+
+      # The extension needs only the headers (see the README's MSVC command).
+      # MSVC is not GCC/Clang, so this also exercises the portable popcount.
+      - name: Build
+        run: cl /nologo /W4 /O2 /I "%SQLITE_DIR%\include" /LD sqlite-phhammdist.c /Fesqlite-phhammdist.dll
+
+      - name: Build test driver
+        run: cl /nologo /W3 /I "%SQLITE_DIR%\include" tests\test_phhammdist.c /Fetests\test_phhammdist.exe /link /LIBPATH:"%SQLITE_DIR%\lib" sqlite3.lib
+
+      - name: Test
+        run: tests\test_phhammdist.exe sqlite-phhammdist.dll

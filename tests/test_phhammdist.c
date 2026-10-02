@@ -237,8 +237,9 @@ int main(int argc, char **argv){
         return 2;
     }
 
-    /* Line-buffered so the last result before a crash is still printed. */
-    setvbuf(stdout, NULL, _IOLBF, 0);
+    /* Unbuffered so the last result before a crash is still printed.
+     * (Not _IOLBF: MSVC's CRT has no line buffering and aborts on size 0.) */
+    setvbuf(stdout, NULL, _IONBF, 0);
 
     printf("# SQLite %s, extension %s\n", sqlite3_libversion(), argv[1]);
 
@@ -251,10 +252,13 @@ int main(int argc, char **argv){
     }
     test_schema_objects(db);
     test_unterminated_text(db);
-    sqlite3_close(db);
 
+    /* Keep the first connection open while the others load the extension, so
+     * it is never unloaded and reloaded mid-run: on macOS, ASan reports a
+     * reloaded library's globals as an ODR violation. */
     test_utf16(argv[1]);
     test_explicit_entry_point(argv[1]);
+    sqlite3_close(db);
 
     printf("1..%d\n", test_num);
     if (failures > 0) {
