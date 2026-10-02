@@ -42,7 +42,7 @@ SQLITE_EXTENSION_INIT1
 /* Number of differing bits between two 64-bit hashes (0-64). */
 static int ph_hamming_distance(uint64_t hash1, uint64_t hash2){
     uint64_t x = hash1 ^ hash2;
-#if defined(__GNUC__) || defined(__clang__)
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(PHHAMMDIST_NO_BUILTIN_POPCOUNT)
     return __builtin_popcountll(x);
 #else
     /* Portable SWAR popcount. */

@@ -75,6 +75,29 @@ for every new connection before opening any:
   sqlite3_auto_extension((void (*)(void))sqlite3_phhammdist_init);
 ```
 
+## Testing
+`make test` builds the extension and a small C test driver
+(`tests/test_phhammdist.c`, linked against libsqlite3), then runs the suite
+twice: once against the normal build and once against a build that uses the
+portable popcount fallback. Results are printed in
+[TAP](https://testanything.org/) format, so `prove` and most CI systems can
+read them, and `make test` fails if any test fails.
+
+```
+  make test            # normal run
+  make test-asan       # with AddressSanitizer and UndefinedBehaviorSanitizer
+  make test-valgrind   # under valgrind, with leak checking
+  prove --exec ./tests/test_phhammdist ./sqlite-phhammdist.so   # via prove, after make test
+```
+
+The test driver needs a SQLite library that can load extensions. macOS's
+system libsqlite3 cannot, so on macOS install SQLite with Homebrew and run
+`make test SQLITE_PREFIX=$(brew --prefix sqlite)`.
+
+To add a test, add one line to the `cases[]` table in
+`tests/test_phhammdist.c`, using `T_INT(name, sql, expected)`,
+`T_NULL(name, sql)` or `T_ERR(name, sql, sqlite_error_code, message_substring)`.
+
 ## Loading from Python
 When loading extensions from python, the python binary needs to be built with
 the --enable-loadable-sqlite-extensions configure argument.  You then need to
