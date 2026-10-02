@@ -50,6 +50,27 @@ The function is registered as `SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS`, so it
 can be used in views, triggers, CHECK constraints, generated columns and
 indexes even when `PRAGMA trusted_schema=OFF`.
 
+## Downloads
+Prebuilt libraries are attached to each
+[release](https://github.com/greycubesgav/sqlite-phhammdist/releases):
+
+| File | Platform |
+|---|---|
+| `sqlite-phhammdist-<version>-linux-x86_64.tar.gz` | Linux x86_64 (glibc 2.4 or later) |
+| `sqlite-phhammdist-<version>-linux-arm64.tar.gz` | Linux arm64 |
+| `sqlite-phhammdist-<version>-macos-universal.tar.gz` | macOS 11 or later, Apple Silicon and Intel |
+| `sqlite-phhammdist-<version>-windows-x64.zip` | Windows x64 (no Visual C++ Redistributable needed) |
+
+Keep the library's file name as it is: SQLite derives the entry point from it.
+To check a download, compare it with the release's `SHA256SUMS` file, or
+verify that it was built by this repository's release workflow with the
+[GitHub CLI](https://cli.github.com/):
+
+```
+  sha256sum --ignore-missing -c SHA256SUMS
+  gh attestation verify sqlite-phhammdist-<version>-linux-x86_64.tar.gz -R greycubesgav/sqlite-phhammdist
+```
+
 ## Building
 The source requires a C99 compiler. Run `make` (GNU make). This builds
 `sqlite-phhammdist.so` (`.dylib` on macOS, `.dll` on Windows with MinGW) and a
@@ -104,6 +125,19 @@ system libsqlite3 cannot, so on macOS install SQLite with Homebrew and run
 To add a test, add one line to the `cases[]` table in
 `tests/test_phhammdist.c`, using `T_INT(name, sql, expected)`,
 `T_NULL(name, sql)` or `T_ERR(name, sql, sqlite_error_code, message_substring)`.
+
+## Making a release
+Push a version tag, e.g. `git tag v1.2.0 && git push origin v1.2.0`. The
+[Release workflow](.github/workflows/release.yml) builds and tests the
+extension on every platform above, then creates a **draft** release with the
+archives, a `SHA256SUMS` file, build attestations and generated release notes.
+Review the draft on the Releases page, edit the notes if needed, and publish
+it. Tags with a suffix (`v1.2.0-rc.1`) become pre-releases.
+
+To release a tag that already exists, or re-run a failed release, use
+**Actions → Release → Run workflow** and enter the tag. Re-running only
+updates a release that is still a draft; a published release is never
+changed.
 
 ## Loading from Python
 When loading extensions from python, the python binary needs to be built with

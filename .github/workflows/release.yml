@@ -1,0 +1,218 @@
+name: Release
+
+# Builds and tests the extension on every platform, then creates a DRAFT
+# GitHub release with the binaries, a SHA256SUMS file and generated notes.
+# A maintainer reviews the draft and publishes it by hand.
+#
+# - Pushing a version tag (v1.2.3, v1.2.3-rc.1) starts a release.
+# - "Run workflow" with a tag name releases an existing tag, e.g. one pushed
+#   before this workflow existed, or re-runs a failed release.
+# - Pull requests that change this file run the build and packaging steps
+#   only, as a dry run; nothing is released.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (e.g. v1.0.0)
+        required: true
+        type: string
+  pull_request:
+    paths: ['.github/workflows/release.yml']
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || (github.event_name == 'pull_request' && 'v0.0.0-dryrun') || github.ref_name }}
+  # Tags are built from the tag itself; PR dry runs from the PR head.
+  SOURCE_REF: ${{ github.event_name == 'pull_request' && github.sha || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag format
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag like v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev
+
+      - name: Build and test
+        run: make WERROR=1 test
+
+      - name: Package
+        run: |
+          name="sqlite-phhammdist-$TAG-linux-${{ matrix.arch }}"
+          mkdir "$name"
+          cp sqlite-phhammdist.so README.md LICENSE "$name/"
+          tar -czf "$name.tar.gz" "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: sqlite-phhammdist-*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS (universal)
+    needs: validate
+    runs-on: macos-latest
+    env:
+      # Oldest macOS that runs on Apple Silicon; the dylib loads on 11.0+.
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      # The system libsqlite3 cannot load extensions; use Homebrew's (keg-only).
+      - name: Install dependencies
+        run: |
+          brew install sqlite
+          echo "SQLITE_PREFIX=$(brew --prefix sqlite)" >> "$GITHUB_ENV"
+
+      - name: Build and test
+        run: make WERROR=1 SQLITE_PREFIX="$SQLITE_PREFIX" test
+
+      - name: Check universal binary
+        run: |
+          archs=$(lipo -archs sqlite-phhammdist.dylib)
+          echo "$archs"
+          case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) exit 1 ;; esac
+
+      - name: Package
+        run: |
+          name="sqlite-phhammdist-$TAG-macos-universal"
+          mkdir "$name"
+          cp sqlite-phhammdist.dylib README.md LICENSE "$name/"
+          tar -czf "$name.tar.gz" "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: sqlite-phhammdist-*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64, MSVC)
+    needs: validate
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # vcpkg is preinstalled on the runner; it builds SQLite with MSVC and
+      # verifies the source download itself. Only the test driver links it.
+      - name: Install SQLite
+        run: |
+          "%VCPKG_INSTALLATION_ROOT%\vcpkg" install sqlite3:x64-windows
+          echo SQLITE_DIR=%VCPKG_INSTALLATION_ROOT%\installed\x64-windows>> "%GITHUB_ENV%"
+          echo %VCPKG_INSTALLATION_ROOT%\installed\x64-windows\bin>> "%GITHUB_PATH%"
+
+      # /MT links the C runtime statically, so users don't need the Visual C++
+      # Redistributable installed.
+      - name: Build
+        run: cl /nologo /W4 /O2 /MT /I "%SQLITE_DIR%\include" /LD sqlite-phhammdist.c /Fesqlite-phhammdist.dll
+
+      - name: Test
+        run: |
+          cl /nologo /W3 /I "%SQLITE_DIR%\include" tests\test_phhammdist.c /Fetests\test_phhammdist.exe /link /LIBPATH:"%SQLITE_DIR%\lib" sqlite3.lib
+          tests\test_phhammdist.exe sqlite-phhammdist.dll
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "sqlite-phhammdist-$env:TAG-windows-x64"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item sqlite-phhammdist.dll, README.md, LICENSE $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: sqlite-phhammdist-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create draft release
+    needs: [linux, macos, windows]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # create the release and upload assets
+      id-token: write       # sign build provenance attestations
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/sqlite-phhammdist-*
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Re-run: refresh the assets on an existing draft, but never touch
+            # a release that has already been published.
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != true ]; then
+              echo "::error::Release $TAG is already published; not modifying it"
+              exit 1
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            prerelease=()
+            if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+            gh release create "$TAG" dist/* --draft --verify-tag \
+              --title "$TAG" --generate-notes "${prerelease[@]}"
+          fi
+          echo "Draft release: $(gh release view "$TAG" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
