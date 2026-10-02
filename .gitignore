@@ -1,2 +1,7 @@
 *.so
-
+*.dylib
+*.dll
+tests/test_phhammdist
+tests/test_phhammdist.exe
+tests/swar/
+tests/asan/
